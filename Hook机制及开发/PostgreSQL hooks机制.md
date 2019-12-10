@@ -96,7 +96,7 @@ endif
 
 ​	Executor系列hooks种类繁多，贯穿在执行函数的每个阶段，在进行下一个阶段前，都会先检查hook函数是否被赋值，若被赋值则调用hook函数，否则调用标准执行函数。
 
-#### planer_hook
+#### planner_hook
 
 ​	planner_hook替换了标准路径规划函数standard_planner，一般在用到该hook时，都会在函数内部调用standard_planner，再对其他需要更改的地方进行修改。
 
