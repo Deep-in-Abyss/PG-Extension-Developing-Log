@@ -122,6 +122,10 @@ WHERE Student.sno = SC.sno AND Course.cno = SC.cno AND sname = 'MM';
 
 ​	**NOTICE**：即使两个关系之间没有约束条件，两个表也会被用笛卡尔积连接在一起，但是优先级较低。
 
+​	路径的连接选择是动态规划和遗传算法来实现的。当使用的表数量小于12个时，一般采用的是动态规划。
+
+​	动态规划做的是尝试将k个表以不同的连接方式连接起来，选出其中代价较小和有好排序结果的路径。最终，将所有表连接产生最终的结果。
+
 ## planner_hook扩展方式
 
 ​	查询规划阶段扩展中，预处理相对独立，一般不会更改。但在生成路径阶段，需要决定表的访问方式和连接方式、连接顺序，这些过程中常常会涉及底层实现，在规划阶段的扩展就是在这些过程中加入自定义的处理函数，也就是新增路径节点种类。
@@ -154,7 +158,45 @@ struct CustomPath
 
 ​	连接方式的生成过程也和扫描过程相似（调用函数的实现的方式有点奇怪啊），由**set_join_pathlist_hook**生成新的自定义连接。
 
+​	set_join_pathlist_hook在add_paths_to_joinrel函数内被调用。add_paths_to_joinrel将分别调用sort_inner_and_outer、match_unsorted_outer、hash_inner_and_outer这三个函数，这三个函数的底层实现才是hash、merge、nested loop方法。
+
+##### 参数意义
+
+​	所有的连接路径函数参数都为root、joinrel、outerrel、innerrel、jointype、extra。
+
+​	extra包含了生成连接路径要用到的量，主要是各种限定条件。
+
+​	jointype指定该连接路径的类型，包括有JOIN_INNER, JOIN_LEFT, JOIN_FULL, JOIN_RIGHT, JOIN_SEMI, JOIN_ANTI, JOIN_UNIQUE_OUTER, JOIN_UNIQUE_INNER。
+
+##### 以sort_inner_and_outer为例
+
+​	sort_inner_and_outer函数创建了一个mergejoin连接路径，具体步骤如下：
+
+1、分别从inner_path和outer_path选出一个**最小代价路径**。 
+
+2、对pathkeys进行排序，保留一些有用的排序给all_pathkeys。
+
+3、对于每种键值排序，尝试产生新的mergejoin_path。
+
+##### pg-strom
+
 ​	在pg-strom中，gpujoin_add_join_path担任了这一实现的任务，通过接受全局规划信息PlannerInfo、连接表信息RelOptInfo、外连接表信息RelOptInfo、内连接表信息RelOptInfo、连接类型JoinType和其他信息JoinPathExtraData，并且尝试生成可以在GPU上运行的路径GpuJoinPath。
+
+##### 如何创建一个连接计划
+
+以create_nestloop_plan函数举例。
+
+```c++
+static NestLoop *
+create_nestloop_plan(PlannerInfo *root,
+					 NestPath *best_path)
+```
+
+​	先递归得到内外节点计划 ，再排序得到最佳连接约束信息。
+
+​	最后创建嵌套循环计划树（make_nestloop），生成了最终的计划树。其中make_nestloop只填充了NestLoop这个node的内容。
+
+​	其它类型的生成计划也类似，主要过程都包含**提取有效连接信息**、**对连接约束排序**、**分离外连接**、**创建相应类型的计划树**、**复制代价估计**等。
 
 #### 小结
 
@@ -162,7 +204,7 @@ struct CustomPath
 
 ​	至于这些新的路径怎么执行，就是Executor的事情了。
 
-
+​	到此，这篇关于hook在查询规划阶段的整个流程阶段的作用都有了比较详细的阐述，在实际开发中，一些比较具体的地方还需要研究一下，以后遇到再回来记录。
 
 
 
